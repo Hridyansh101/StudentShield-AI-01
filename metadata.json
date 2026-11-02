@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix StudentShield AI",
+  "description": "Expert cybersecurity, legal fine-print, and consumer-protection auditor protecting college students from predatory internships, employment bonds, rental/PG scams, campus phishing, and EdTech dark patterns.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
