@@ -4,8 +4,8 @@
 
 StudentShield AI is an AI-powered student safety tool designed to help students identify suspicious internship offers, phishing messages, financial traps, deceptive clauses, and manipulative wording.
 
-🌐 **Live Demo:** https://studentshield-ai.ai.studio  
-📦 **GitHub Repository:** https://github.com/Hridyansh101/StudentShield-AI
+🌐 **Live Demo:** https://student-shield.ai.studio  
+📦 **GitHub Repository:** https://github.com/Hridyansh101/StudentShield-AI-01/tree/main
 
 ## ✨ Features
 
