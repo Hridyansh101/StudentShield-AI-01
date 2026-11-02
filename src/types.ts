@@ -24,6 +24,14 @@ export interface UrlSafetyInfo {
   google_search_verified?: boolean;
 }
 
+export interface AudioAnalysisInfo {
+  transcript: string;
+  voice_urgency_level?: 'Extreme' | 'High' | 'Moderate' | 'Normal' | string;
+  caller_background_sound?: string;
+  call_tactics_detected?: string[];
+  duration_seconds?: number;
+}
+
 export interface AuditResult {
   document_type: string;
   risk_score: number;
@@ -41,9 +49,13 @@ export interface AuditResult {
     mimeType?: string;
     url?: string;
     pageTitle?: string;
+    audioBase64?: string;
+    audioFileName?: string;
+    audioDuration?: number;
   };
   grounding_sources?: GroundingSource[];
   url_safety?: UrlSafetyInfo;
+  audio_analysis?: AudioAnalysisInfo;
 }
 
 export interface PresetCase {
@@ -54,6 +66,9 @@ export interface PresetCase {
   description: string;
   inputText: string;
   sourceType: string;
+  sampleAudioBase64?: string;
+  sampleAudioName?: string;
+  sampleAudioDuration?: number;
 }
 
 export interface AuditHistoryItem {

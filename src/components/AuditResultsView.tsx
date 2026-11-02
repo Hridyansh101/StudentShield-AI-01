@@ -28,7 +28,14 @@ import {
   Unlock,
   Search,
   AlertTriangle,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Volume2,
+  VolumeX,
+  Mic,
+  Radio,
+  PhoneCall,
+  Activity,
+  FileAudio
 } from 'lucide-react';
 import { AuditResult } from '../types';
 import { RiskMeter } from './RiskMeter';
@@ -36,12 +43,14 @@ import { RiskMeter } from './RiskMeter';
 interface AuditResultsViewProps {
   result: AuditResult;
   onReset: () => void;
+  onOpenLiveVoice?: () => void;
 }
 
-export const AuditResultsView: React.FC<AuditResultsViewProps> = ({ result, onReset }) => {
+export const AuditResultsView: React.FC<AuditResultsViewProps> = ({ result, onReset, onOpenLiveVoice }) => {
   const [copiedReply, setCopiedReply] = useState(false);
   const [copiedReport, setCopiedReport] = useState(false);
   const [copiedSourceText, setCopiedSourceText] = useState(false);
+  const [copiedTranscript, setCopiedTranscript] = useState(false);
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('All');
   const [checkedActions, setCheckedActions] = useState<Record<number, boolean>>({});
   
@@ -52,9 +61,11 @@ export const AuditResultsView: React.FC<AuditResultsViewProps> = ({ result, onRe
   const hasImage = Boolean(result.audited_input?.imageBase64);
   const hasText = Boolean(result.audited_input?.text && result.audited_input.text.trim().length > 0);
   const hasUrl = Boolean(result.audited_input?.url || result.url_safety?.scanned_url);
-  const hasAuditedInput = hasImage || hasText || hasUrl;
+  const hasAudio = Boolean(result.audited_input?.audioBase64 || result.audio_analysis);
+  const hasAuditedInput = hasImage || hasText || hasUrl || hasAudio;
 
   const urlSafety = result.url_safety;
+  const audioAnalysis = result.audio_analysis;
   const groundingSources = result.grounding_sources || [];
 
   const isDoNotReply = 
@@ -85,7 +96,26 @@ export const AuditResultsView: React.FC<AuditResultsViewProps> = ({ result, onRe
     }
   };
 
+  const handleCopyTranscript = () => {
+    if (audioAnalysis?.transcript) {
+      navigator.clipboard.writeText(audioAnalysis.transcript);
+      setCopiedTranscript(true);
+      setTimeout(() => setCopiedTranscript(false), 2000);
+    }
+  };
+
   const generateReportText = () => {
+    const audioSection = audioAnalysis ? `
+---
+ACOUSTIC CALL ANALYSIS & TELEPHONIC INTELLIGENCE:
+Urgency Level: ${audioAnalysis.voice_urgency_level || 'High'}
+Ambient Acoustic Environment: ${audioAnalysis.caller_background_sound || 'N/A'}
+Telephonic Tactics Flagged: ${audioAnalysis.call_tactics_detected?.join(', ') || 'None'}
+
+VERBATIM CALL TRANSCRIPT:
+${audioAnalysis.transcript}
+` : '';
+
     const urlSection = urlSafety ? `
 ---
 SCANNED WEB LINK SAFETY:
@@ -105,6 +135,7 @@ ${groundingSources.map(s => `• ${s.title}: ${s.url}`).join('\n')}
 Generated: ${new Date().toLocaleString()}
 Document / Link Classification: ${result.document_type}
 Threat Assessment: ${result.verdict_badge} (Risk Score: ${result.risk_score}/100)
+${audioSection}
 ${urlSection}
 ---
 EXECUTIVE SUMMARY:
@@ -363,23 +394,25 @@ Audit conducted via StudentShield AI. Mapped to UGC Guidelines, Section 27 India
         </div>
       )}
 
-      {/* Audited Source Evidence Card (Uploaded Screenshot / Audited Text / URL) */}
+      {/* Audited Source Evidence Card (Uploaded Screenshot / Audio Recording / Audited Text / URL) */}
       {hasAuditedInput && (
         <div className="bg-white dark:bg-[#0b101c] rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs dark:shadow-none transition-colors">
           <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800/80">
             <div className="flex items-center gap-2">
               <div className="p-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-950/50 text-cyan-600 dark:text-cyan-400 border border-cyan-100 dark:border-cyan-800/40">
-                {hasUrl ? <Globe className="w-4 h-4" /> : hasImage ? <ImageIcon className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                {hasAudio ? <Volume2 className="w-4 h-4 text-emerald-500" /> : hasUrl ? <Globe className="w-4 h-4" /> : hasImage ? <ImageIcon className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
               </div>
               <div>
                 <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <span>Audited Source Evidence</span>
                   <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                    {hasUrl ? 'Web Link Scanned' : hasImage ? 'Screenshot Analyzed' : 'Text Excerpt Analyzed'}
+                    {hasAudio ? 'Call Audio Recording Audited' : hasUrl ? 'Web Link Scanned' : hasImage ? 'Screenshot Analyzed' : 'Text Excerpt Analyzed'}
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {hasUrl
+                  {hasAudio
+                    ? 'Recorded phone conversation or voice note inspected for recruiter urgency, call-center background signatures, and payment traps.'
+                    : hasUrl
                     ? 'Target website clauses and domain properties verified by StudentShield AI.'
                     : hasImage 
                     ? 'Original document screenshot inspected by Gemini Multimodal Vision.' 
@@ -389,14 +422,14 @@ Audit conducted via StudentShield AI. Mapped to UGC Guidelines, Section 27 India
             </div>
 
             <div className="flex items-center gap-2">
-              {(hasText || hasUrl) && (
+              {(hasText || hasUrl || hasAudio) && (
                 <button
-                  onClick={handleCopySourceText}
+                  onClick={hasAudio && audioAnalysis?.transcript ? handleCopyTranscript : handleCopySourceText}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                   title="Copy original audited content"
                 >
-                  {copiedSourceText ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedSourceText ? 'Copied' : hasUrl ? 'Copy URL' : 'Copy Text'}</span>
+                  {(copiedSourceText || copiedTranscript) ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  <span>{(copiedSourceText || copiedTranscript) ? 'Copied' : hasAudio ? 'Copy Transcript' : hasUrl ? 'Copy URL' : 'Copy Text'}</span>
                 </button>
               )}
 
@@ -474,6 +507,38 @@ Audit conducted via StudentShield AI. Mapped to UGC Guidelines, Section 27 India
                 </div>
               )}
 
+              {/* Audio Player & Recording Preview */}
+              {hasAudio && result.audited_input?.audioBase64 && (
+                <div className="space-y-2 p-3.5 rounded-xl bg-slate-50 dark:bg-[#070a12] border border-slate-200 dark:border-slate-800">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                    <div className="flex items-center gap-2">
+                      <Volume2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                        {result.audited_input.audioFileName || 'Phone Call Recording'}
+                      </span>
+                    </div>
+                    {result.audited_input.audioDuration && (
+                      <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                        Duration: ~{Math.round(result.audited_input.audioDuration)}s
+                      </span>
+                    )}
+                  </div>
+                  <audio
+                    controls
+                    src={result.audited_input.audioBase64}
+                    className="w-full h-10 rounded-lg outline-none"
+                  />
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
+                    <span>Acoustic signal processed via Gemini Multimodal Audio Architecture</span>
+                    {audioAnalysis?.voice_urgency_level && (
+                      <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
+                        Urgency: {audioAnalysis.voice_urgency_level}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Text Excerpt / Note Display */}
               {hasText && (
                 <div className="space-y-1.5">
@@ -486,6 +551,156 @@ Audit conducted via StudentShield AI. Mapped to UGC Guidelines, Section 27 India
                 </div>
               )}
 
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Telephonic Fraud & Acoustic Intelligence Card */}
+      {audioAnalysis && (
+        <div className="bg-white dark:bg-[#0b101c] rounded-xl border border-rose-200 dark:border-rose-950/60 p-5 shadow-xs transition-colors space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50">
+                <PhoneCall className="w-4 h-4 animate-bounce" />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Telephonic Fraud & Acoustic Intelligence</span>
+                  <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+                    Audio Forensic Audit
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Acoustic pressure signals, dialer ambience, and conversational coercion patterns extracted from the call.
+                </p>
+              </div>
+            </div>
+
+            {onOpenLiveVoice && (
+              <button
+                onClick={onOpenLiveVoice}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
+                title="Roleplay live with Gemini 3.8 Live API to rehearse your defense"
+              >
+                <Radio className="w-3.5 h-3.5" />
+                <span>Practice Defense in Live Voice</span>
+              </button>
+            )}
+          </div>
+
+          {/* Metric Chips Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {/* Urgency Level */}
+            <div className="p-3 rounded-lg bg-slate-50 dark:bg-[#070a12] border border-slate-200 dark:border-slate-800 space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+                <Activity className="w-3.5 h-3.5 text-rose-500" />
+                <span>Vocal Pressure Level</span>
+              </span>
+              <div className="text-sm font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                <span>{audioAnalysis.voice_urgency_level || 'Extreme Urgency'}</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300">
+                  Coercive
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                Fast-talking tempo & high-pressure cadence
+              </div>
+            </div>
+
+            {/* Caller Background Noise */}
+            <div className="p-3 rounded-lg bg-slate-50 dark:bg-[#070a12] border border-slate-200 dark:border-slate-800 space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+                <Volume2 className="w-3.5 h-3.5 text-cyan-500" />
+                <span>Acoustic Environment</span>
+              </span>
+              <div className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 line-clamp-1">
+                {audioAnalysis.caller_background_sound || 'Call-Center VoIP Ambience'}
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                Dialer bleed & multiple background voices
+              </div>
+            </div>
+
+            {/* Call Tactics Flagged */}
+            <div className="p-3 rounded-lg bg-slate-50 dark:bg-[#070a12] border border-slate-200 dark:border-slate-800 space-y-1 sm:col-span-2 md:col-span-1">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                <span>Telephonic Traps</span>
+              </span>
+              <div className="text-sm font-bold text-amber-600 dark:text-amber-400">
+                {audioAnalysis.call_tactics_detected?.length || 2} Coercion Vectors
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                Immediate payment demand + bogus selection
+              </div>
+            </div>
+          </div>
+
+          {/* Detected Tactics Tags */}
+          {audioAnalysis.call_tactics_detected && audioAnalysis.call_tactics_detected.length > 0 && (
+            <div className="space-y-1.5 pt-1">
+              <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                Specific Telephonic Tactics Detected:
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {audioAnalysis.call_tactics_detected.map((tactic, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2.5 py-1 rounded-md text-xs font-mono font-medium bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/40 flex items-center gap-1"
+                  >
+                    <AlertTriangle className="w-3 h-3 text-rose-500" />
+                    <span>{tactic}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Verbatim Call Transcript */}
+          {audioAnalysis.transcript && (
+            <div className="space-y-2 pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                  <FileAudio className="w-3.5 h-3.5 text-cyan-500" />
+                  <span>Verbatim Call Transcript & Speaker Dialogue</span>
+                </span>
+                <button
+                  onClick={handleCopyTranscript}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                  title="Copy verbatim call transcript"
+                >
+                  {copiedTranscript ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedTranscript ? 'Copied Transcript' : 'Copy Transcript'}</span>
+                </button>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#070a12] border border-slate-200 dark:border-slate-800 text-xs sm:text-sm font-sans space-y-2 max-h-72 overflow-y-auto leading-relaxed shadow-inner">
+                {audioAnalysis.transcript.split('\n').filter(Boolean).map((line, idx) => {
+                  const isRecruiter = line.startsWith('[Caller') || line.startsWith('[HR') || line.startsWith('[Recruiter') || line.startsWith('[Agent');
+                  const isStudent = line.startsWith('[Student') || line.startsWith('[Candidate') || line.startsWith('[You');
+                  
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-2.5 rounded-lg border text-xs sm:text-sm ${
+                        isRecruiter 
+                          ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-slate-900 dark:text-slate-100'
+                          : isStudent
+                          ? 'bg-sky-50/60 dark:bg-sky-950/20 border-sky-200 dark:border-sky-900/40 text-slate-900 dark:text-slate-100'
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <div className="font-mono text-[11px] font-bold mb-1 flex items-center justify-between">
+                        <span className={isRecruiter ? 'text-rose-600 dark:text-rose-400' : isStudent ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500'}>
+                          {isRecruiter ? '🚨 Potential Scam Recruiter' : isStudent ? '🎓 Student / Candidate' : 'Dialogue Line'}
+                        </span>
+                      </div>
+                      <p className="whitespace-pre-wrap">{line}</p>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

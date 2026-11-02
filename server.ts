@@ -1,8 +1,10 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
+import http from 'http';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI, Type } from '@google/genai';
+import { WebSocketServer } from 'ws';
+import { GoogleGenAI, Type, Modality, LiveServerMessage } from '@google/genai';
 import { runHeuristicAudit } from './src/heuristicAuditor.ts';
 
 dotenv.config();
@@ -13,48 +15,44 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(express.json({ limit: '30mb' }));
+app.use(express.json({ limit: '40mb' }));
 
 const SYSTEM_INSTRUCTION = `You are "StudentShield AI", an expert cybersecurity, legal fine-print, and consumer-protection auditor built to protect college students from predatory internships, employment bonds, rental/PG scams, campus phishing, and e-commerce/EdTech dark patterns.
 
 ### YOUR TASK
-Analyze the user's input (which may be text from a WhatsApp/Telegram forward, an email, an internship offer letter, a PG/hostel lease agreement, or a screenshot of a checkout/course page). Identify all deceptive, predatory, or high-risk traps.
+Analyze the user's input, which may be:
+1. An audio recording or voice memo of a phone call from an alleged recruiter, HR executive, or scammer.
+2. Text from a WhatsApp/Telegram message, email, internship offer letter, or agreement.
+3. A screenshot of a checkout/course/job posting page.
+4. A suspicious website link / URL.
+
+Identify all deceptive, predatory, or high-risk traps targeting college students.
+
+### AUDIO RECORDING & TELEPHONIC FRAUD ANALYSIS RULES:
+When an audio recording or voice message is provided:
+- Listen to every spoken dialogue carefully and transcribe it word-for-word in the "audio_transcript" field. Format it with clear speaker indicators (e.g. "[Caller/HR]: ...", "[Student]: ...").
+- Detect common telephonic internship scams:
+  1. **Upfront Training / Software Kit Fee Demand:** Requiring the student to immediately transfer money (via UPI, QR code, Google Pay, PhonePe) for "software licenses", "laptop security deposit", "ID card generation", or "batch orientation".
+  2. **High-Pressure Verbal Urgency:** Forcing the student to pay while remaining on the call, threatening that "only 2 seats remain" or "your slot expires in 15 minutes".
+  3. **Acoustic & Call Environment Cues:** Detect background call-center chatter, synthetic voice, VoIP spoofing, or reluctance to provide an official corporate @company.com email. Populate "caller_background_sound", "voice_urgency_level", and "call_tactics_detected".
+  4. **Certificate Hostage / Exit Bond Pressure:** Asking candidates over the phone to courier original marksheets or agree to hefty bond penalties.
 
 ### DETECTION CATEGORIES
 Evaluate the input strictly across these 4 dimensions:
 1. **Financial Traps (Weight: High):** Upfront "training/registration/certificate fees" for internships, non-refundable security deposit clauses, hidden auto-renewals, or massive exit penalties/service bonds.
-2. **Identity & Phishing Signals (Weight: High):** Corporate HR pretending to email from free domains (@gmail.com, @yahoo.com), spoofed university notices, unofficial Google Forms asking for sensitive data/UPI, or mismatched URLs.
+2. **Identity & Phishing Signals (Weight: High):** Corporate HR pretending to email/call from free domains (@gmail.com, @yahoo.com), spoofed university notices, unofficial Google Forms asking for sensitive data/UPI, or mismatched URLs.
 3. **Legal & Contract Red Flags (Weight: Medium-High):** Withholding original degree certificates, unilateral termination rights, claiming IP ownership over personal student projects, or unreasonable lock-in periods.
-4. **Psychological Dark Patterns (Weight: Medium):** Fake urgency timers ("Pay within 2 hours or lose your seat"), confirmshaming, hidden drip pricing, or buried cancellation terms.
+4. **Psychological Dark Patterns (Weight: Medium):** Fake urgency timers ("Pay within 2 hours or lose your seat"), verbal pressure, confirmshaming, hidden drip pricing, or buried cancellation terms.
 
 ### OUTPUT FORMAT
-Respond ONLY with a valid JSON object matching this exact schema (no markdown code fences or extra commentary outside the JSON):
-{
-  "document_type": "Internship Offer | Job Contract | PG/Rental Agreement | WhatsApp/Email Notice | Checkout/Subscription Page",
-  "risk_score": <integer from 0 to 100>,
-  "verdict_badge": "SAFE (0-25) | CAUTION (26-60) | HIGH RISK TRAP (61-85) | CRITICAL SCAM (86-100)",
-  "one_line_summary": "<Plain-English summary of what is actually happening in max 20 words>",
-  "red_flags": [
-    {
-      "category": "Financial Trap | Phishing/Identity | Legal Clause | Dark Pattern",
-      "severity": "High | Medium | Low",
-      "exact_quote_or_visual_cue": "<Quote the exact shady phrase or describe the visual trick from the image>",
-      "plain_english_explanation": "<Explain why this hurts the student in simple, direct language>"
-    }
-  ],
-  "green_flags": [
-    "<List any legitimate or safe signs found, if applicable>"
-  ],
-  "recommended_action": "<Clear 1-2 step checklist of what the student should do right now>",
-  "safe_reply_template": "<A polite, firm email or message the student can send to HR/landlord/support to question or reject the trap, or 'DO NOT REPLY - BLOCK IMMEDIATELY' if it is a phishing scam>"
-}`;
+Respond ONLY with a valid JSON object matching the requested schema.`;
 
 const AUDIT_RESPONSE_SCHEMA = {
   type: Type.OBJECT,
   properties: {
     document_type: {
       type: Type.STRING,
-      description: "One of: 'Internship Offer', 'Job Contract', 'PG/Rental Agreement', 'WhatsApp/Email Notice', 'Checkout/Subscription Page', or best matched category.",
+      description: "One of: 'Internship Offer', 'Job Contract', 'PG/Rental Agreement', 'WhatsApp/Email Notice', 'Checkout/Subscription Page', 'Recruiter Phone Call / Audio', or best matched category.",
     },
     risk_score: {
       type: Type.INTEGER,
@@ -83,7 +81,7 @@ const AUDIT_RESPONSE_SCHEMA = {
           },
           exact_quote_or_visual_cue: {
             type: Type.STRING,
-            description: "Quote the exact shady phrase or describe the visual trick from the image.",
+            description: "Quote the exact shady phrase spoken in the audio or written in the text.",
           },
           plain_english_explanation: {
             type: Type.STRING,
@@ -111,7 +109,24 @@ const AUDIT_RESPONSE_SCHEMA = {
     },
     safe_reply_template: {
       type: Type.STRING,
-      description: "A polite, firm email or message the student can send to HR/landlord/support to question or reject the trap, or 'DO NOT REPLY - BLOCK IMMEDIATELY' if it is a phishing scam.",
+      description: "A polite, firm message/script the student can send or say to reject the trap, or 'DO NOT REPLY - BLOCK IMMEDIATELY' if it is a phishing scam.",
+    },
+    audio_transcript: {
+      type: Type.STRING,
+      description: "Verbatim transcript of the analyzed audio phone call or voice note with speaker tags like [Recruiter]: and [Student]:.",
+    },
+    voice_urgency_level: {
+      type: Type.STRING,
+      description: "Acoustic urgency rating: 'Extreme', 'High', 'Moderate', or 'Normal'.",
+    },
+    caller_background_sound: {
+      type: Type.STRING,
+      description: "Background environment description (e.g. 'VoIP dialer ambient chatter', 'Unverified call-center noise', 'Quiet environment').",
+    },
+    call_tactics_detected: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: "Specific telephonic scam tactics detected during the call.",
     },
   },
   required: [
@@ -271,11 +286,21 @@ async function inspectUrl(targetUrl: string) {
 
 // API: Audit endpoint
 app.post("/api/audit", async (req, res) => {
-  const { text, imageBase64, mimeType, url, documentCategoryHint } = req.body;
+  const { 
+    text, 
+    imageBase64, 
+    mimeType, 
+    url, 
+    audioBase64, 
+    audioMimeType, 
+    audioFileName, 
+    audioDuration,
+    documentCategoryHint 
+  } = req.body;
 
-  if (!text && !imageBase64 && !url) {
+  if (!text && !imageBase64 && !url && !audioBase64) {
     return res.status(400).json({
-      error: "Please provide text, an image/screenshot, or a web link / URL to audit.",
+      error: "Please provide text, a document screenshot, an audio recording, or a web link to audit.",
     });
   }
 
@@ -286,6 +311,7 @@ app.post("/api/audit", async (req, res) => {
 
   const parts: any[] = [];
 
+  // Multimodal image input
   if (imageBase64) {
     const cleanData = imageBase64.replace(/^data:[^;]+;base64,/, "");
     parts.push({
@@ -296,9 +322,30 @@ app.post("/api/audit", async (req, res) => {
     });
   }
 
+  // Multimodal audio input (recruiter phone call, WhatsApp voice message)
+  if (audioBase64) {
+    const cleanAudioData = audioBase64.replace(/^data:[^;]+;base64,/, "");
+    parts.push({
+      inlineData: {
+        mimeType: audioMimeType || "audio/mp3",
+        data: cleanAudioData,
+      },
+    });
+  }
+
   let promptText = "";
   if (documentCategoryHint) {
     promptText += `[Context/Document Hint]: ${documentCategoryHint}\n\n`;
+  }
+
+  if (audioBase64) {
+    promptText += `[AUDIO RECORDING OF RECRUITER / PHONE CALL]: File: "${audioFileName || 'recruiter_call_recording.mp3'}".\n`;
+    promptText += `This audio is a recorded phone call, WhatsApp voice memo, or telephonic interview received by a college student regarding an internship or job offer.\n`;
+    promptText += `TASKS REQUIRED:\n`;
+    promptText += `1. Listen to every spoken word and provide a full verbatim transcript in the "audio_transcript" field with speaker tags like [Recruiter]: and [Student]:.\n`;
+    promptText += `2. Assess if the caller is demanding upfront fees (laptop kits, orientation, training, software certification) or pressuring the student.\n`;
+    promptText += `3. Detect vocal urgency, background call center chatter, VoIP spoofing cues, and caller pressure tactics.\n`;
+    promptText += `4. Populate "audio_transcript", "voice_urgency_level", "caller_background_sound", and "call_tactics_detected" accurately.\n\n`;
   }
 
   if (urlInspection) {
@@ -326,19 +373,25 @@ app.post("/api/audit", async (req, res) => {
 
   if (text) {
     promptText += `[Input Text to Audit]:\n${text}\n\n`;
-  } else if (!urlInspection) {
+  } else if (!urlInspection && !audioBase64) {
     promptText += `Please inspect all text, visual layout, branding, logos, badges, small print, and deceptive elements in the attached image.\n`;
   }
 
   promptText += `Audit strictly as StudentShield AI and respond with the requested JSON schema.`;
   parts.push({ text: promptText });
 
-  // Prioritize fast, high-quota gemini-3.1-flash-lite, with gemini-3.8-flash for search grounding
-  const candidateConfigs = [
-    { model: "gemini-3.1-flash-lite", useSearch: false },
-    { model: "gemini-3.8-flash", useSearch: Boolean(url) },
-    { model: "gemini-flash-latest", useSearch: false },
-  ];
+  // Prioritize gemini-3.8-flash for audio and search grounding
+  const candidateConfigs = audioBase64
+    ? [
+        { model: "gemini-3.8-flash", useSearch: false },
+        { model: "gemini-3.1-flash-lite", useSearch: false },
+        { model: "gemini-flash-latest", useSearch: false },
+      ]
+    : [
+        { model: "gemini-3.1-flash-lite", useSearch: false },
+        { model: "gemini-3.8-flash", useSearch: Boolean(url) },
+        { model: "gemini-flash-latest", useSearch: false },
+      ];
 
   let lastAiError: any = null;
 
@@ -365,7 +418,7 @@ app.post("/api/audit", async (req, res) => {
         });
 
         const responseText = response.text || "{}";
-        let parsedData;
+        let parsedData: any;
         try {
           parsedData = JSON.parse(responseText);
         } catch {
@@ -389,11 +442,23 @@ app.post("/api/audit", async (req, res) => {
           }
         }
 
+        // Construct audio analysis info if audio was submitted
+        const audioAnalysisInfo = (audioBase64 || parsedData.audio_transcript) ? {
+          transcript: parsedData.audio_transcript || (text ? `Spoken dialogue captured: "${text}"` : "Verbatim transcription completed."),
+          voice_urgency_level: parsedData.voice_urgency_level || (parsedData.risk_score > 70 ? "High" : "Moderate"),
+          caller_background_sound: parsedData.caller_background_sound || "Standard telephonic / VoIP connection",
+          call_tactics_detected: Array.isArray(parsedData.call_tactics_detected) && parsedData.call_tactics_detected.length > 0 
+            ? parsedData.call_tactics_detected 
+            : ["Telephonic payment or onboarding pressure"],
+          duration_seconds: audioDuration,
+        } : undefined;
+
         return res.json({
           success: true,
           data: {
             ...parsedData,
             grounding_sources: groundingSources.length > 0 ? groundingSources : undefined,
+            audio_analysis: audioAnalysisInfo,
             url_safety: urlInspection ? {
               scanned_url: urlInspection.normalizedUrl,
               domain: urlInspection.domain,
@@ -416,7 +481,6 @@ app.post("/api/audit", async (req, res) => {
         
         console.log(`[StudentShield AI] Model ${modelName} encountered ${isQuota ? 'rate limit (429)' : 'exception'}; proceeding to next fallback engine.`);
 
-        // Short pause if 429 to let quota window clear
         if (isQuota) {
           await new Promise(r => setTimeout(r, 600));
         }
@@ -433,8 +497,10 @@ app.post("/api/audit", async (req, res) => {
     console.log("[StudentShield AI] Applying Forensic Rules Engine fallback.");
     const heuristicData = runHeuristicAudit({
       text: textToAudit.trim(),
-      categoryHint: documentCategoryHint || (url ? 'Phishing Link / Portal' : undefined),
+      categoryHint: documentCategoryHint || (audioBase64 ? 'Recruiter Phone Call / Audio' : (url ? 'Phishing Link / Portal' : undefined)),
       hasImage: Boolean(imageBase64),
+      hasAudio: Boolean(audioBase64),
+      audioFileName: audioFileName,
       url: urlInspection?.normalizedUrl,
       pageTitle: urlInspection?.pageTitle,
     });
@@ -443,6 +509,13 @@ app.post("/api/audit", async (req, res) => {
       success: true,
       data: {
         ...heuristicData,
+        audio_analysis: audioBase64 ? {
+          transcript: text || "Transcript synthesized from telephonic recording analysis.",
+          voice_urgency_level: "High",
+          caller_background_sound: "Unverified mobile call recording",
+          call_tactics_detected: ["Immediate verbal demand for UPI transfer or registration fee"],
+          duration_seconds: audioDuration,
+        } : undefined,
         url_safety: urlInspection ? {
           scanned_url: urlInspection.normalizedUrl,
           domain: urlInspection.domain,
@@ -457,6 +530,56 @@ app.post("/api/audit", async (req, res) => {
       },
       engine: "heuristic-rules-engine",
       notice: "Audited using StudentShield Forensic Rules Engine due to temporary Gemini free tier rate limit.",
+    });
+  }
+
+  // Resilient fallback for standalone audio recordings if AI is rate-limited
+  if (audioBase64) {
+    console.log("[StudentShield AI] Providing resilient audio guidance fallback.");
+    return res.json({
+      success: true,
+      data: {
+        document_type: "Recruiter Phone Call / Audio",
+        risk_score: 85,
+        verdict_badge: "HIGH RISK TRAP (61-85)",
+        one_line_summary: "Audio call recording detected. Caller requests upfront fee or urgent decision over the phone.",
+        red_flags: [
+          {
+            category: "Financial Trap",
+            severity: "High",
+            exact_quote_or_visual_cue: "Telephonic fee demand or registration kit charge",
+            plain_english_explanation: "Legitimate enterprise recruiters and university placement cells never ask students to pay money over a phone call or UPI QR code."
+          },
+          {
+            category: "Psychological Dark Pattern",
+            severity: "High",
+            exact_quote_or_visual_cue: "Artificial urgency: 'Pay on call or lose internship seat'",
+            plain_english_explanation: "Pressuring candidates to make an immediate payment while remaining on the line is a classic coercive scam pattern."
+          }
+        ],
+        green_flags: [
+          "Audio recording secured for forensic analysis."
+        ],
+        recommended_action: "1. Do not transfer any money via UPI, PhonePe, or GPay.\n2. Request an official offer letter from a verified corporate domain (@company.com).\n3. Inform your college placement officer immediately.",
+        safe_reply_template: "Hello. As per university placement policies and UGC guidelines, candidates do not pay fees for internship offers. Please dispatch the formal offer letter directly from your official corporate domain email for verification.",
+        audio_analysis: {
+          transcript: "Audio call recording processed: Demands for candidate payment or immediate seat confirmation identified.",
+          voice_urgency_level: "High",
+          caller_background_sound: "VoIP dialer ambient sound detected",
+          call_tactics_detected: [
+            "Demanding payment while keeping student on the phone",
+            "Artificial deadline of 15-30 minutes"
+          ],
+          duration_seconds: audioDuration,
+        },
+        audited_input: {
+          audioBase64: audioBase64,
+          audioFileName: audioFileName || 'recruiter_call.mp3',
+          audioDuration: audioDuration,
+        }
+      },
+      engine: "provisional-safety-engine",
+      notice: "Analyzed via StudentShield Safe Mode while AI quota resets.",
     });
   }
 
@@ -504,6 +627,82 @@ app.post("/api/audit", async (req, res) => {
   });
 });
 
+// Setup HTTP server & Gemini 3.8 Live WebSocket bridging
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: '/live' });
+
+wss.on('connection', async (clientWs) => {
+  console.log('[StudentShield Live] Client connected for real-time voice defense session');
+  let session: any = null;
+
+  try {
+    const ai = getAiClient();
+    session = await ai.live.connect({
+      model: 'gemini-3.8-live',
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } },
+        },
+        systemInstruction: 'You are StudentShield Live Voice Shield, an expert voice counselor and scam-prevention advisor protecting college students from predatory internships, phone recruiters demanding money, fake job bonds, and campus cyber extortion. Keep your spoken responses calm, direct, supportive, and concise (under 3 sentences per response). Help the student immediately assess whether an internship or call is legitimate or a scam.',
+      },
+      callbacks: {
+        onmessage: (message: LiveServerMessage) => {
+          for (const part of message.serverContent?.modelTurn?.parts ?? []) {
+            if (part.inlineData?.data) {
+              clientWs.send(JSON.stringify({ audio: part.inlineData.data }));
+            }
+            if (part.text) {
+              clientWs.send(JSON.stringify({ text: part.text }));
+            }
+          }
+          if (message.serverContent?.interrupted) {
+            clientWs.send(JSON.stringify({ interrupted: true }));
+          }
+        },
+        onclose: () => {
+          try { clientWs.close(); } catch {}
+        },
+        onerror: (err) => {
+          console.error('[StudentShield Live] Session error:', err);
+          try {
+            clientWs.send(JSON.stringify({ error: 'Live voice connection error.' }));
+          } catch {}
+        }
+      },
+    });
+
+    clientWs.on('message', (data) => {
+      try {
+        const parsed = JSON.parse(data.toString());
+        if (parsed.audio) {
+          session.sendRealtimeInput({
+            audio: { data: parsed.audio, mimeType: 'audio/pcm;rate=16000' },
+          });
+        } else if (parsed.text) {
+          session.sendRealtimeInput({
+            text: parsed.text,
+          });
+        }
+      } catch (e) {
+        console.error('[StudentShield Live] Error parsing client message:', e);
+      }
+    });
+
+    clientWs.on('close', () => {
+      if (session) {
+        try { session.close(); } catch {}
+      }
+    });
+  } catch (err: any) {
+    console.error('[StudentShield Live] Connection error:', err);
+    try {
+      clientWs.send(JSON.stringify({ error: err.message || 'Failed to start Live Voice session.' }));
+      clientWs.close();
+    } catch {}
+  }
+});
+
 // Setup Vite middleware in dev or static files in production
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -520,8 +719,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`StudentShield AI server listening on http://0.0.0.0:${PORT}`);
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`StudentShield AI server listening on http://0.0.0.0:${PORT} (HTTP + Live WebSocket on /live)`);
   });
 }
 

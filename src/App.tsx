@@ -17,6 +17,7 @@ import { AuditResultsView } from './components/AuditResultsView';
 import { RightsHandbookModal } from './components/RightsHandbookModal';
 import { PresetGalleryModal } from './components/PresetGalleryModal';
 import { HistoryModal } from './components/HistoryModal';
+import { LiveVoiceShieldModal } from './components/LiveVoiceShieldModal';
 import { useTheme } from './context/ThemeContext';
 import { AuditResult, AuditHistoryItem, PresetCase } from './types';
 import { PRESET_CASES } from './data/presets';
@@ -33,6 +34,10 @@ export default function App() {
     imageBase64?: string;
     mimeType?: string;
     url?: string;
+    audioBase64?: string;
+    audioMimeType?: string;
+    audioFileName?: string;
+    audioDuration?: number;
     categoryHint?: string;
   } | null>(null);
 
@@ -40,6 +45,7 @@ export default function App() {
   const [isHandbookOpen, setIsHandbookOpen] = useState(false);
   const [isPresetsOpen, setIsPresetsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isLiveVoiceOpen, setIsLiveVoiceOpen] = useState(false);
 
   // History state
   const [history, setHistory] = useState<AuditHistoryItem[]>(() => {
@@ -80,6 +86,10 @@ export default function App() {
     imageBase64?: string;
     mimeType?: string;
     url?: string;
+    audioBase64?: string;
+    audioMimeType?: string;
+    audioFileName?: string;
+    audioDuration?: number;
     categoryHint?: string;
   }) => {
     setIsLoading(true);
@@ -97,6 +107,10 @@ export default function App() {
           imageBase64: params.imageBase64,
           mimeType: params.mimeType,
           url: params.url,
+          audioBase64: params.audioBase64,
+          audioMimeType: params.audioMimeType,
+          audioFileName: params.audioFileName,
+          audioDuration: params.audioDuration,
           documentCategoryHint: params.categoryHint,
         }),
       });
@@ -117,6 +131,9 @@ export default function App() {
           mimeType: params.mimeType,
           url: params.url || json.data?.url_safety?.scanned_url,
           pageTitle: json.data?.url_safety?.page_title,
+          audioBase64: params.audioBase64,
+          audioFileName: params.audioFileName,
+          audioDuration: params.audioDuration,
         },
       };
       setCurrentResult(result);
@@ -159,6 +176,10 @@ export default function App() {
     handleAudit({
       text: preset.inputText,
       categoryHint: preset.category,
+      audioBase64: preset.sampleAudioBase64,
+      audioMimeType: preset.sampleAudioBase64 ? 'audio/wav' : undefined,
+      audioFileName: preset.sampleAudioName,
+      audioDuration: preset.sampleAudioDuration,
     });
   };
 
@@ -181,6 +202,7 @@ export default function App() {
         onOpenHistory={() => setIsHistoryOpen(true)}
         historyCount={history.length}
         onNewAudit={() => setCurrentResult(null)}
+        onOpenLiveVoice={() => setIsLiveVoiceOpen(true)}
       />
 
       {/* Main Container */}
@@ -221,6 +243,7 @@ export default function App() {
           <AuditResultsView
             result={currentResult}
             onReset={() => setCurrentResult(null)}
+            onOpenLiveVoice={() => setIsLiveVoiceOpen(true)}
           />
         ) : (
           <div className="space-y-10">
@@ -291,6 +314,7 @@ export default function App() {
               onSelectPreset={(preset) => {
                 handleSelectPreset(preset);
               }}
+              onOpenLiveVoice={() => setIsLiveVoiceOpen(true)}
             />
 
             {/* Statutory Knowledge Base Citation Strip */}
@@ -450,6 +474,11 @@ export default function App() {
         history={history}
         onSelectHistoryItem={(item) => setCurrentResult(item)}
         onClearHistory={handleClearHistory}
+      />
+
+      <LiveVoiceShieldModal
+        isOpen={isLiveVoiceOpen}
+        onClose={() => setIsLiveVoiceOpen(false)}
       />
 
     </div>

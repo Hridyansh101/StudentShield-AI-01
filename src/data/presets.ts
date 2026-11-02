@@ -1,4 +1,5 @@
 import { PresetCase } from '../types';
+import { createSyntheticDemoWav } from '../utils/audioUtils';
 
 export const PRESET_CASES: PresetCase[] = [
   {
@@ -130,6 +131,36 @@ Congratulations! You have been shortlisted for direct placement at Tier-1 MNCs (
 To proceed to the online interview room, you must complete your Identity Card generation fee of ₹1,499.
 Submit your Aadhaar number, College Roll Number, and scan the QR code below via PhonePe / GPay.
 Timer: Only 08:42 minutes left before your candidate slot expires!"`
+  },
+  {
+    id: 'recruiter-call-laptop-deposit',
+    title: 'Recruiter Call: ₹3,500 Software & Kit Fee Trap',
+    category: 'Recruiter Phone Call / Audio',
+    riskType: 'CRITICAL SCAM',
+    description: 'Audio phone call from an alleged HR demanding an immediate ₹3,500 UPI transfer for a remote software internship.',
+    sourceType: 'Phone Call Audio Recording',
+    sampleAudioName: 'telephonic_hr_3500fee_scam.wav',
+    sampleAudioDuration: 38,
+    sampleAudioBase64: createSyntheticDemoWav(3, 440),
+    inputText: `[RECORDED PHONE CALL WITH ALLEGED RECRUITER - DURATION: 0:38]
+[Caller/HR]: "Hello Rahul? This is Pooja from TechGlobal Careers Talent Acquisition. We reviewed your resume from the campus drive and you are shortlisted for our 3-month Python Full Stack Internship with ₹25,000 monthly stipend."
+[Student]: "Hello ma'am! That is great, when does the orientation start?"
+[Caller/HR]: "Orientation is this Monday. However, our IT policy mandates that you must activate your developer workbench license and remote asset security kit today. The registration fee is INR 3,500, fully refundable with your first stipend."
+[Student]: "Can I deduct this from my first month stipend instead?"
+[Caller/HR]: "No, candidate verification cannot proceed without this. You must transfer via PhonePe/GPay to our accounts coordinator at 9876543210@paytm right now while on this call. Only 2 slots are left in your college batch, so send the screenshot within 15 minutes or your seat will be cancelled."`
+  },
+  {
+    id: 'whatsapp-voice-note-stipend-scam',
+    title: 'WhatsApp Voice Note: Instant ₹30k Direct Selection',
+    category: 'Recruiter Phone Call / Audio',
+    riskType: 'CRITICAL SCAM',
+    description: 'Voice note claiming direct selection with zero interview, pressuring candidate to pay ₹1,999 before 5 PM.',
+    sourceType: 'WhatsApp Voice Note',
+    sampleAudioName: 'whatsapp_voicenote_1999_internship.wav',
+    sampleAudioDuration: 24,
+    sampleAudioBase64: createSyntheticDemoWav(2, 520),
+    inputText: `[WHATSAPP AUDIO VOICE NOTE - DURATION: 0:24]
+[Caller/HR]: "Hi Sneha, this is Vikram from MNC Placement Cell. Congratulations, your profile was selected for our premium remote software development internship! You will be getting ₹30,000 fixed stipend every month. No technical rounds or coding test needed! You just need to pay ₹1,999 towards your student portal credentials and ID card generation. Scan the QR code sent below on this chat and pay before 5 PM today to lock in your offer letter."`
   },
   {
     id: 'legitimate-internship-offer',

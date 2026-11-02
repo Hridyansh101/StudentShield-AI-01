@@ -4,14 +4,37 @@ interface HeuristicParams {
   text: string;
   categoryHint?: string;
   hasImage?: boolean;
+  hasAudio?: boolean;
+  audioFileName?: string;
   url?: string;
   pageTitle?: string;
 }
 
-export function runHeuristicAudit({ text, categoryHint, hasImage, url, pageTitle }: HeuristicParams): AuditResult {
-  const normalized = (text + ' ' + (url || '') + ' ' + (pageTitle || '')).toLowerCase();
+export function runHeuristicAudit({ text, categoryHint, hasImage, hasAudio, audioFileName, url, pageTitle }: HeuristicParams): AuditResult {
+  const normalized = (text + ' ' + (url || '') + ' ' + (pageTitle || '') + ' ' + (audioFileName || '')).toLowerCase();
   const redFlags: RedFlag[] = [];
   const greenFlags: string[] = [];
+
+  // AUDIO & PHONE CALL SCAM SIGNALS
+  if (hasAudio || normalized.includes('call') || normalized.includes('voice') || normalized.includes('recruiter phone')) {
+    if (/(?:call\s*disconnect|urgency|transfer\s*now|within\s*15\s*min|only\s*today|batch\s*is\s*closing)/i.test(text)) {
+      redFlags.push({
+        category: 'Psychological Dark Pattern',
+        severity: 'High',
+        exact_quote_or_visual_cue: 'High-pressure telephonic urgency countdown',
+        plain_english_explanation: 'Scammers use urgent phone calls to prevent students from consulting parents, professors, or college placement officers before transferring money.',
+      });
+    }
+
+    if (/(?:pay\s*on\s*call|gpay\s*now|send\s*screenshot\s*on\s*whatsapp|upi\s*qr|scan\s*now)/i.test(text)) {
+      redFlags.push({
+        category: 'Financial Trap',
+        severity: 'High',
+        exact_quote_or_visual_cue: 'Demanding immediate payment via UPI while remaining on phone call',
+        plain_english_explanation: 'Pressuring candidates to complete payments over the phone without written documentation is a standard telephonic cyber scam tactic.',
+      });
+    }
+  }
 
   // URL SAFETY & PHISHING CHECKS
   if (url) {
